@@ -1,0 +1,215 @@
+---
+title: "Stats2Project2"
+author: "Aniketh V"
+date: "7/22/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load the libraries
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(magrittr)
+library(stringr)
+library(corrplot)
+library(caret)
+library(glmnet)
+library(Lahman)
+library(mice)
+library(car)
+library(MASS)
+```
+
+Loading dataset
+```{r}
+#imported the main data
+Bank_Fix <- read.csv("bank-additional-full.csv",sep=";",header=TRUE, strip.white = TRUE, na.strings = c("unknown"))
+
+#Separted the header string into separate columns
+#Bank_Fix = mainBank %>% separate(age.job.marital.education.default.housing.loan.contact.month.day_of_week.duration.campaign.pdays.previous.poutcome.emp.var.rate.cons.price.idx.cons.conf.idx.euribor3m.nr.employed.y, c("age", "job", "marital", "education", "default", "housing", "loan", "contact", "month", "day_of_week", "duration", "campaign", "pdays", "previous", "poutcome", "emp.var.rate", "cons.price.idx", "cons.conf.idx", "euribor3m", "nr.employed", "y"), ";", extra = "merge")
+
+Bank_Fix$age = as.integer(Bank_Fix$age)
+Bank_Fix$nr.employed = as.integer(Bank_Fix$nr.employed)
+Bank_Fix$euribor3m = as.double(Bank_Fix$euribor3m)
+Bank_Fix$cons.conf.idx = as.double(Bank_Fix$cons.conf.idx)
+Bank_Fix$cons.price.idx = as.double(Bank_Fix$cons.price.idx)
+Bank_Fix$emp.var.rate = as.double(Bank_Fix$emp.var.rate)
+Bank_Fix$previous = as.integer(Bank_Fix$previous)
+Bank_Fix$pdays = as.integer(Bank_Fix$pdays)
+Bank_Fix$campaign = as.integer(Bank_Fix$campaign)
+Bank_Fix$duration = as.integer(Bank_Fix$duration)
+Bank_Fix$y = as.factor(Bank_Fix$y)
+Bank_Fix$poutcome = as.factor(Bank_Fix$poutcome)
+Bank_Fix$term_deposit = Bank_Fix$y
+Bank_Fix$default = as.factor(Bank_Fix$default)
+Bank_Fix$housing = as.factor(Bank_Fix$housing)
+Bank_Fix$marital = as.factor(Bank_Fix$marital)
+Bank_Fix$loan = as.factor(Bank_Fix$loan)
+
+Bank_Fix$y = NULL
+#Bank_Fix[Bank_Fix=="unknown"]<-NA
+
+
+#Bank_Fix$default = str_replace(Bank_Fix$default, "unknown", "NA")
+# Bank_Fix$housing = str_replace(Bank_Fix$housing, "unknown", "NA")
+# Bank_Fix$marital = str_replace(Bank_Fix$marital, "unknown", "NA")
+# Bank_Fix$loan = str_replace(Bank_Fix$loan, "unknown", "NA")
+
+#find out the data types
+dplyr::glimpse(Bank_Fix)
+
+
+#Imputed NA values
+tempData <- mice(Bank_Fix,m=1,maxit=0,method ='logreg',seed=500)
+Bank_Fix_Imp <- complete(tempData,1)
+
+```
+
+```{r, split}
+set.seed(100)
+split_percent = .70
+trainIndices = sample(1:dim(Bank_Fix_Imp)[1],round(split_percent * dim(Bank_Fix_Imp)[1]))
+train = Bank_Fix_Imp[trainIndices,]
+test = Bank_Fix_Imp[-trainIndices,]
+summary(train)
+
+table(train$term_deposit)
+
+set.seed(1000)
+down_train <- downSample(x = train[, -ncol(train)],
+                         y = train$term_deposit)
+table(down_train$Class)
+
+library(DMwR)
+
+set.seed(9560)
+smote_train <- SMOTE(term_deposit ~ ., data  = train)                         
+table(smote_train$term_deposit)
+
+library(ROSE)
+
+#set.seed(9560)
+#rose_train <- ROSE(Class ~ ., data  = imbal_train)$data                         
+#table(rose_train$Class)
+```
+
+```{r}
+#On Normal Train set before subsampling
+full.log = glm(term_deposit~.,family="binomial",data=train)
+step.log = full.log %>% stepAIC(trace=FALSE)
+summary(step.log)
+exp(cbind("Odds ratio" = coef(step.log), confint.default(step.log, level = 0.95)))
+vif(step.log)
+
+#smote Train data set
+full.log = glm(term_deposit~.,family="binomial",data=smote_train)
+step.log = full.log %>% stepAIC(trace=FALSE)
+summary(step.log)
+exp(cbind("Odds ratio" = coef(step.log), confint.default(step.log, level = 0.95)))
+vif(step.log)
+
+#lasso train
+dat.train.x <- model.matrix(term_deposit ~ .,smote_train)[,-1]
+dat.train.y<-smote_train$term_deposit
+cvfit <- cv.glmnet(dat.train.x, dat.train.y, family = "binomial", type.measure = "class", nlambda = 1000)
+plot(cvfit)
+coef(cvfit, s = "lambda.min")
+
+#final lasso model
+finalLassoModel<-glmnet(dat.train.x, dat.train.y, family = "binomial",lambda=cvfit$lambda.min)
+cvfit$lambda.min
+
+#DO later
+grid = 10^seq(10,-2, length = 100)
+lasso.mod = glmnet(dat.train.x,dat.train.y,alpha = 1, lambda = grid)
+
+cv.out = glmnet(dat.train.x,dat.train.y, alpha = 1)
+plot(cv.out)
+lambdaFunct = cv.out$lambda.min
+lasso.pred = predict(lasso.mod, s = lambdaFunct, newx = dat.train.x)
+
+MSE_lasso = mean((dat.train.y - lasso.pred)^2)
+MSE_lasso
+coef(lasso.mod, s = lambdaFunct)
+```
+
+
+EDA
+```{r}
+#Some initial EDAs
+summary(Bank_Fix)
+
+#Split catergorical and continuous data
+Bank_Conti <- Bank_Fix[, !sapply(Bank_Fix, is.factor)]
+Bank_categ <- Bank_Fix[, sapply(Bank_Fix, is.factor)]
+
+#Boxplots
+boxplot(Bank_Conti$age)
+boxplot(Bank_Conti$nr.employed)
+boxplot(Bank_Conti[,2,3])
+
+#ScatterPlot
+pairs(Bank_Conti[,1:10], pch = 19)
+
+#PCA
+pc.result<-prcomp(Bank_Conti,scale=FALSE)
+pc.scores<-pc.result$x
+cor(pc.scores)
+pc.result$rotation
+ 
+par(mfrow=c(1,2))
+eigenvals<-(pc.result$sdev)^2
+plot(1:10,eigenvals/sum(eigenvals),type="l",main="Scree Plot",ylab="Prop. Var. Explained")
+cumulative.prop<-cumsum(eigenvals/sum(eigenvals))
+plot(1:10,cumulative.prop,type="l",main="Cumulative proportion",ylim=c(0,1))
+par(mfrow=c(1,1))
+
+#Correlation Matrix
+# Computing the p value of correlations
+cor.mtest <- function(mat, ...) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat<- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+        for (j in (i + 1):n) {
+            tmp <- cor.test(mat[, i], mat[, j], ...)
+            p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+        }
+    }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+  p.mat
+}
+
+correlation = cor.mtest(Bank_Conti[,1:10])
+mat = cor(Bank_Conti[, 1:10])
+
+corrplot(correlation, type = "upper", order = "hclust", insig = "label_sig", p.mat = mat, sig.level = 0.05)
+
+p.mat <- cor.mtest(who_imp_conti[,2:20])
+correlation <- cor(who_imp_conti[,2:20])
+#Correlation plot with significance level of 0.05
+corrplot(correlation, type="upper", order="hclust", insig = "label_sig", p.mat = p.mat, sig.level = 0.05)
+
+correlation <- cor(Bank_Conti)
+corrplot(correlation)
+
+#Format the data
+attach(Bank_Fix)
+x_vars = model.matrix(term_deposit~ ., data = Bank_Fix)[,-1]
+y_vars = Bank_Fix$term_deposit
+grid=10^seq(10,-2, length = 100)
+
+set.seed(100)
+train = sample(1:nrow(x_vars), nrow(x_vars)/2)
+x_test = (-train)
+y_test = y_vars[x_test]
+
+Lasso = glmnet(x, y, alpha = 1, lambda = grid)
+
+```
