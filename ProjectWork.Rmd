@@ -124,7 +124,7 @@ coef(cvfit, s = "lambda.min")
 finalLassoModel<-glmnet(dat.train.x, dat.train.y, family = "binomial",lambda=cvfit$lambda.min)
 cvfit$lambda.min
 
-##performing prediction using both models
+##performing prediction using both models,performing vjdev test
 
 #DO later
 grid = 10^seq(10,-2, length = 100)
