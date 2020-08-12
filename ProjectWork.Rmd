@@ -99,99 +99,14 @@ table(smote_train$term_deposit)
 #table(rose_train$Class)
 ```
 
-```{r}
-#Logistic regression on Normal Train set before SMOTE
-full.original.log = glm(term_deposit~.,family="binomial",data=train)
-step.original.log = full.original.log %>% stepAIC(trace=FALSE)
-summary(step.original.log)
-exp(cbind("Odds ratio" = coef(step.original.log), confint.default(step.original.log, level = 0.95)))
-vif(step.original.log)
-
-#smote Train data  step wise
-full.log = glm(term_deposit~.,family="binomial",data=smote_train)
-step.log = full.log %>% stepAIC(trace=FALSE)
-summary(step.log)
-exp(cbind("Odds ratio" = coef(step.log), confint.default(step.log, level = 0.95)))
-vif(step.log)
-
-#smote Train data lasso 
-dat.train.x <- model.matrix(term_deposit ~ .,smote_train)[,-1]
-dat.train.y<-smote_train$term_deposit
-cvfit <- cv.glmnet(dat.train.x, dat.train.y, family = "binomial", type.measure = "class", nlambda = 1000)
-plot(cvfit)
-coef(cvfit, s = "lambda.min")
-
-#final lasso model
-finalLassoModel<-glmnet(dat.train.x, dat.train.y, family = "binomial",lambda=cvfit$lambda.min)
-cvfit$lambda.min
-
-##performing prediction using both models
-
-
-dat.test.x<-model.matrix(term_deposit ~ .,test)[,-1]
-
-fit.pred.lasso <- predict(finalLassoModel, newx = dat.test.x, type = "response")
-fit.pred.step<-predict(step.log,newdata=test,type="response")
-
-cutoff<-0.6
-class.lasso<-factor(ifelse(fit.pred.lasso>cutoff,"Yes","No"),levels=c("No","Yes"))
-class.step<-factor(ifelse(fit.pred.step>cutoff,"Yes","No"),levels=c("No","Yes"))
-
-
-#Confusion Matrix for Lasso
-conf.lasso<-table(class.lasso,test$term_deposit)
-print("Confusion matrix for LASSO")
-## [1] "Confusion matrix for LASSO"
-conf.lasso
-
-conf.step<-table(class.step,test$term_deposit)
-print("Confusion matrix for Stepwise")
-## [1] "Confusion matrix for Stepwise"
-conf.step
-
-sum(diag(conf.lasso))/sum(conf.lasso)
-sum(diag(conf.step))/sum(conf.step)
-
-
-
-
-results.lasso<-prediction(fit.pred.lasso, test$term_deposit)
-roc.lasso = performance(results.lasso, measure = "tpr", x.measure = "fpr")
-plot(roc.lasso,colorize = TRUE)
-abline(a=0, b= 1)
-
-
-
-
-
-
-
-
-
-
-#DO later
-grid = 10^seq(10,-2, length = 100)
-lasso.mod = glmnet(dat.train.x,dat.train.y,alpha = 1, lambda = grid)
-
-cv.out = glmnet(dat.train.x,dat.train.y, alpha = 1)
-plot(cv.out)
-lambdaFunct = cv.out$lambda.min
-lasso.pred = predict(lasso.mod, s = lambdaFunct, newx = dat.train.x)
-
-MSE_lasso = mean((dat.train.y - lasso.pred)^2)
-MSE_lasso
-coef(lasso.mod, s = lambdaFunct)
-```
-
-
 EDA
 ```{r}
 #Some initial EDAs
-summary(Bank_Fix)
+summary(Bank_Fix_Imp)
 
 #Split catergorical and continuous data
-Bank_Conti <- Bank_Fix[, !sapply(Bank_Fix, is.factor)]
-Bank_categ <- Bank_Fix[, sapply(Bank_Fix, is.factor)]
+Bank_Conti <- Bank_Fix_Imp[, !sapply(Bank_Fix, is.factor)]
+Bank_categ <- Bank_Fix_Imp[, sapply(Bank_Fix, is.factor)]
 
 #Boxplots
 boxplot(Bank_Conti$age)
@@ -236,8 +151,8 @@ mat = cor(Bank_Conti[, 1:10])
 
 corrplot(correlation, type = "upper", order = "hclust", insig = "label_sig", p.mat = mat, sig.level = 0.05)
 
-p.mat <- cor.mtest(who_imp_conti[,2:20])
-correlation <- cor(who_imp_conti[,2:20])
+p.mat <- cor.mtest(Bank_Conti[,2:10])
+correlation <- cor(Bank_Conti[,2:10])
 #Correlation plot with significance level of 0.05
 corrplot(correlation, type="upper", order="hclust", insig = "label_sig", p.mat = p.mat, sig.level = 0.05)
 
@@ -255,6 +170,99 @@ train = sample(1:nrow(x_vars), nrow(x_vars)/2)
 x_test = (-train)
 y_test = y_vars[x_test]
 
-Lasso = glmnet(x, y, alpha = 1, lambda = grid)
+#Lasso = glmnet(x, y, alpha = 1, lambda = grid)
+```
 
+
+
+```{r}
+#Logistic regression on Normal Train set before SMOTE
+full.original.log = glm(term_deposit~.,family="binomial",data=train)
+step.original.log = full.original.log %>% stepAIC(trace=FALSE)
+summary(step.original.log)
+exp(cbind("Odds ratio" = coef(step.original.log), confint.default(step.original.log, level = 0.95)))
+vif(step.original.log)
+
+#smote Train data  step wise
+full.log = glm(term_deposit~.,family="binomial",data=smote_train)
+step.log = full.log %>% stepAIC(trace=FALSE)
+summary(step.log)
+exp(cbind("Odds ratio" = coef(step.log), confint.default(step.log, level = 0.95)))
+vif(step.log)
+
+#Calculate the psuedo r2
+# ll.null <- full.log$null.deviance/-2
+# ll.proposed <- full.log$deviance/-2
+# (ll.null - ll.proposed) / ll.null
+
+#smote Train data lasso 
+dat.train.x <- model.matrix(term_deposit ~ .,smote_train)[,-1]
+dat.train.y<-smote_train$term_deposit
+cvfit <- cv.glmnet(dat.train.x, dat.train.y, family = "binomial", type.measure = "class", nlambda = 1000)
+plot(cvfit)
+coef(cvfit, s = "lambda.min")
+
+#final lasso model
+finalLassoModel<-glmnet(dat.train.x, dat.train.y, family = "binomial",lambda=cvfit$lambda.min)
+cvfit$lambda.min
+
+##performing prediction using both models
+dat.test.x<-model.matrix(term_deposit ~ .,test)[,-1]
+
+fit.pred.lasso <- predict(finalLassoModel, newx = dat.test.x, type = "response")
+fit.pred.step<-predict(step.log,newdata=test,type="response")
+
+cutoff<-0.6
+class.lasso<-factor(ifelse(fit.pred.lasso>cutoff,"Yes","No"),levels=c("No","Yes"))
+class.step<-factor(ifelse(fit.pred.step>cutoff,"Yes","No"),levels=c("No","Yes"))
+
+
+#Confusion Matrix for Lasso
+conf.lasso<-table(class.lasso,test$term_deposit)
+print("Confusion matrix for LASSO")
+## [1] "Confusion matrix for LASSO"
+conf.lasso
+
+conf.step<-table(class.step,test$term_deposit)
+print("Confusion matrix for Stepwise")
+## [1] "Confusion matrix for Stepwise"
+conf.step
+
+sum(diag(conf.lasso))/sum(conf.lasso)
+sum(diag(conf.step))/sum(conf.step)
+
+
+results.lasso<-prediction(fit.pred.lasso, test$term_deposit)
+roc.lasso = performance(results.lasso, measure = "tpr", x.measure = "fpr")
+plot(roc.lasso,colorize = TRUE)
+abline(a=0, b= 1)
+
+
+
+# #DO later
+# grid = 10^seq(10,-2, length = 100)
+# lasso.mod = glmnet(dat.train.x,dat.train.y,alpha = 1, lambda = grid)
+# 
+# cv.out = glmnet(dat.train.x,dat.train.y, alpha = 1)
+# plot(cv.out)
+# lambdaFunct = cv.out$lambda.min
+# lasso.pred = predict(lasso.mod, s = lambdaFunct, newx = dat.train.x)
+# 
+# MSE_lasso = mean((dat.train.y - lasso.pred)^2)
+# MSE_lasso
+# coef(lasso.mod, s = lambdaFunct)
+```
+
+
+
+
+```{r}
+full.log = glm(term_deposit~ age + job + marital + education + default + housing + loan + contact + month + day_of_week + duration + campaign + pdays + previous + poutcome + emp.var.rate + cons.price.idx + cons.conf.idx + euribor3m + nr.employed,family="binomial",data=smote_train)
+step.log = full.log %>% stepAIC(trace=FALSE)
+summary(step.log)
+exp(cbind("Odds ratio" = coef(step.log), confint.default(step.log, level = 0.95)))
+vif(step.log)
+
+ex_step_log = glm(term_deposit ~ job + marital + education + housing + contact + month + day_of_week + campaign + previous + emp.var.rate + cons.price.idx + cons.conf.idx + euribor3m + nr.employed + age*job + job*marital, data = smote_train, family = "binomial")
+summary(ex_step_log)
 ```
